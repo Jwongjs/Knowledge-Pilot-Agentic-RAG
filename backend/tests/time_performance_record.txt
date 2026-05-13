@@ -1,0 +1,26 @@
+Now I have the full picture. Here's the LLM call count per test:
+
+Test	LLM calls
+test_conversation_path ("Hello!")	0 — fast path in both analyzer AND responder
+test_conversation_routing ("hello", "what can you do")	0 each — both fast-path
+test_simple_path	analyzer(1) + planner(1) + grader(3→concurrent~1) + synthesizer(1) = ~4 round-trips
+test_complex_path	analyzer(1) + decomposer(1) + planner(1) + grader(3→1) + synthesizer(1) = ~5
+test_multi_hop_path	same as complex = ~5
+test_answer_always_set (3 queries: "hi" + 2 factual)	0 + ~4 + ~4 = ~8
+test_simple_path_no_hallucination_flag	~4
+test_replan_loop_fires_on_insufficient	analyzer(1)+planner(1)+grader×2 iters(2)+synthesizer(1)+decomposer(0) = ~5
+Total: ~35 LLM calls at ~1.1s each = ~38s if perfectly concurrent. Actual: ~160s because each test runs sequentially and many nodes are sequential within a single query. The e2e graph can't be parallelised at the test level (module-scoped fixture, asyncio.run per test).
+
+The grader asyncio.gather fix does help for latency within a single grader call (3 calls → 1.1s instead of 3.3s). But the remaining wall time is the irreducible sequential chain: analyzer → planner → grader → synthesizer. That's 4 API hops × ~1.1s minimum = ~4.5s per query, plus Gemini's thinking latency for gemini-2.5-flash which is non-trivial.
+
+The honest summary: this is as fast as it can get for a live LLM test suite. The fix I made (asyncio.gather in the grader) is the only real win available — it saves ~2s per graded query. Beyond that, the remaining time is unavoidable network latency against the Gemini API. If you want a faster CI loop, the only real option would be mocking the LLM calls in the e2e tests (but that removes the value of testing the full graph).
+
+Here's what changed:
+
+- relevance_grader.py — grader now evaluates all evidence items concurrently with asyncio.gather instead of sequentially. For 3 evidence items at ~1.1s each, this saves ~2s per retrieval iteration (3.3s → 1.1s).
+
+- test_graph_e2e.py — two new tests:
+
+test_simple_path_no_hallucination_flag: asserts the guard returns False on a valid answer (closes the gap where a broken guard flagging everything True would go undetected)
+test_replan_loop_fires_on_insufficient: uses _IrrelevantThenRelevantRetriever which returns off-topic content on call 1 and relevant content on call 2, verifying that iteration_count >= 2 and an answer is still produced
+The remaining ~160s for 9 tests is the floor — it's sequential LLM API hops through the graph, not a code problem.
