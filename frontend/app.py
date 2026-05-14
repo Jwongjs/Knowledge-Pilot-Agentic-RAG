@@ -90,35 +90,6 @@ def _render_sidebar(last_response: dict | None):
                 st.markdown(f"[🔗 LangSmith trace]({trace_url})")
 
         st.divider()
-        st.markdown("**Upload a paper**")
-        uploaded = st.file_uploader(
-            "PDF or DOCX",
-            type=["pdf", "docx"],
-            label_visibility="collapsed",
-            key=st.session_state.get("uploader_key", "uploader_0"),
-        )
-        if uploaded is not None and uploaded.name not in st.session_state.get("uploaded_names", set()):
-            with st.spinner(f"Indexing {uploaded.name}…"):
-                try:
-                    files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type)}
-                    with httpx.Client(timeout=_TIMEOUT) as client:
-                        r = client.post(f"{_API}/upload", files=files)
-                    r.raise_for_status()
-                    info = r.json()
-                    st.session_state.setdefault("uploaded_names", set()).add(uploaded.name)
-                    st.success(
-                        f"✅ {info['filename']} — {info['chunks_indexed']} chunks indexed "
-                        f"({info['total_documents']} total documents)"
-                    )
-                except httpx.ConnectError:
-                    st.error("Cannot reach backend at localhost:8000.")
-                except httpx.HTTPStatusError as exc:
-                    detail = exc.response.json().get("detail", str(exc))
-                    st.error(f"Upload failed: {detail}")
-                except Exception as exc:
-                    st.error(f"Upload error: {exc}")
-
-        st.divider()
         st.markdown("**Example queries**")
         for label, q in _EXAMPLE_QUERIES:
             if st.button(f"{label}: {q[:45]}…" if len(q) > 45 else f"{label}: {q}", key=q):
@@ -248,78 +219,68 @@ def _render_citations_tab(last_response: dict | None):
 
 
 # ---------------------------------------------------------------------------
-# Evaluation tab
+# Documents tab — upload + list of indexed sources
 # ---------------------------------------------------------------------------
 
-def _render_eval_tab():
-    st.header("Evaluation")
-    st.markdown(
-        "Run the 25-case golden dataset against the live backend and display scores. "
-        "This calls every case sequentially — expect ~5 minutes."
+def _render_documents_tab():
+    st.header("Documents")
+
+    st.markdown("**Upload a paper**")
+    uploaded = st.file_uploader(
+        "PDF or DOCX",
+        type=["pdf", "docx"],
+        label_visibility="collapsed",
     )
-
-    if st.button("▶ Run evaluation", type="primary"):
-        import sys
-        from pathlib import Path
-        # Add backend to path so we can import evaluation modules
-        backend_path = Path(__file__).parent.parent / "backend"
-        if str(backend_path) not in sys.path:
-            sys.path.insert(0, str(backend_path))
-
-        from dotenv import load_dotenv
-        load_dotenv(backend_path / ".env")
-
-        from backend.evaluation.golden_dataset import GOLDEN_DATASET
-
-        results = []
-        progress = st.progress(0, text="Running evaluation…")
-        status = st.empty()
-
-        for i, case in enumerate(GOLDEN_DATASET):
-            status.caption(f"[{i+1}/{len(GOLDEN_DATASET)}] {case['id']}: {case['query'][:60]}…")
+    if uploaded is not None and uploaded.name not in st.session_state.get("uploaded_names", set()):
+        with st.spinner(f"Indexing {uploaded.name}…"):
             try:
-                resp = _post_ask(case["query"])
-                citations = resp.get("citations", [])
-                actual_types = {c.get("source_type") for c in citations}
-                expected = set(case.get("expected_sources", []))
-                hit = expected.issubset(actual_types) if expected else True
-                results.append({
-                    "ID": case["id"],
-                    "Complexity": case["complexity"],
-                    "Query": case["query"][:60] + ("…" if len(case["query"]) > 60 else ""),
-                    "Expected sources": ", ".join(case.get("expected_sources", [])) or "—",
-                    "Actual sources": ", ".join(sorted(actual_types)) or "—",
-                    "Iterations": resp.get("iteration_count", 1),
-                    "Hallucination": "⚠️" if resp.get("hallucination_flag") else "✅",
-                    "Pass": "✅" if hit else "❌",
-                })
+                files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type)}
+                with httpx.Client(timeout=_TIMEOUT) as client:
+                    r = client.post(f"{_API}/upload", files=files)
+                r.raise_for_status()
+                info = r.json()
+                st.session_state.setdefault("uploaded_names", set()).add(uploaded.name)
+                st.success(
+                    f"✅ {info['filename']} — {info['chunks_indexed']} chunks indexed "
+                    f"({info['total_documents']} total documents)"
+                )
+            except httpx.ConnectError:
+                st.error("Cannot reach backend at localhost:8000.")
+            except httpx.HTTPStatusError as exc:
+                detail = exc.response.json().get("detail", str(exc))
+                st.error(f"Upload failed: {detail}")
             except Exception as exc:
-                results.append({
-                    "ID": case["id"],
-                    "Complexity": case["complexity"],
-                    "Query": case["query"][:60],
-                    "Expected sources": "",
-                    "Actual sources": f"ERROR: {exc}",
-                    "Iterations": 0,
-                    "Hallucination": "—",
-                    "Pass": "❌",
-                })
-            progress.progress((i + 1) / len(GOLDEN_DATASET))
+                st.error(f"Upload error: {exc}")
 
-        status.empty()
-        progress.empty()
+    st.divider()
+    st.markdown("**Indexed sources**")
+    try:
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            r = client.get(f"{_API}/documents")
+        r.raise_for_status()
+        sources = r.json()
+    except httpx.ConnectError:
+        st.error("Cannot reach backend at localhost:8000.")
+        return
+    except Exception as exc:
+        st.error(f"Failed to load documents: {exc}")
+        return
 
-        import pandas as pd
-        df = pd.DataFrame(results)
-        pass_rate = (df["Pass"] == "✅").mean()
-        hal_rate = (df["Hallucination"] == "⚠️").mean()
+    if not sources:
+        st.info("No documents indexed yet. Upload a PDF above or run `python ingest_papers.py`.")
+        return
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Pass rate", f"{pass_rate:.0%}")
-        c2.metric("Hallucination rate", f"{hal_rate:.0%}")
-        c3.metric("Cases run", len(results))
-
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    import pandas as pd
+    df = pd.DataFrame([
+        {
+            "Name": s.get("name", ""),
+            "Type": s.get("doc_type", ""),
+            "Chunks": s.get("chunks", 0),
+        }
+        for s in sources
+    ])
+    st.dataframe(df, width='stretch', hide_index=True)
+    st.caption(f"Total: {len(sources)} documents, {df['Chunks'].sum()} chunks")
 
 
 # ---------------------------------------------------------------------------
@@ -339,8 +300,8 @@ def main():
     last_response = st.session_state.history[-1][1] if st.session_state.history else None
     _render_sidebar(last_response)
 
-    chat_tab, chunks_tab, citations_tab, eval_tab = st.tabs([
-        "💬 Chat", "📄 Chunks", "🔖 Citations", "📊 Evaluation"
+    chat_tab, chunks_tab, citations_tab, documents_tab = st.tabs([
+        "💬 Chat", "📄 Chunks", "🔖 Citations", "📚 Documents"
     ])
 
     with chat_tab:
@@ -349,8 +310,8 @@ def main():
         _render_chunks_tab(last_response)
     with citations_tab:
         _render_citations_tab(last_response)
-    with eval_tab:
-        _render_eval_tab()
+    with documents_tab:
+        _render_documents_tab()
 
 
 if __name__ == "__main__":

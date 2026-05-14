@@ -86,7 +86,7 @@ class KnowledgePilotService:
         if suffix not in (".pdf", ".docx"):
             raise ValueError(f"Unsupported file type: {suffix}. Supported: .pdf, .docx")
 
-        target_dir = Path(__file__).parent.parent.parent / "data" / "papers"
+        target_dir = Path(__file__).parent.parent.parent / "data" / "uploads"
         target_dir.mkdir(parents=True, exist_ok=True)
         target_path = target_dir / filename
         target_path.write_bytes(file_bytes)

@@ -114,6 +114,89 @@ return [candidates[r.index] for r in reranked.results]
 
 ---
 
+## Multi-User Backend (accounts, sessions, uploads)
+
+Today the system is single-tenant: one global FAISS+BM25 index, an in-memory or single-project Firestore conversation store, and uploads written to a shared `data/uploads/` directory. Going multi-user means four things need a persistence layer:
+
+1. **Accounts & auth** — sign-up, login, password reset, OAuth, session tokens.
+2. **Conversation history** — already partially solved via [backend/rag/conversation_store.py](backend/rag/conversation_store.py); needs scoping by `user_id` instead of `session_id`.
+3. **Uploaded documents** — PDF bytes plus parsed chunks, ideally scoped per user so one user's papers don't leak into another's retrieval.
+4. **Per-user vector indices** — today FAISS is one in-process index. Multi-tenant needs either per-user indices or a hosted vector DB with metadata filtering.
+
+### Recommendation: Supabase
+
+**Why Supabase over Firestore:**
+- **Single console for everything.** Auth, Postgres for relational data, Storage for PDF blobs, and Row-Level Security policies for per-user isolation — all in one product. Firestore needs Firebase Auth + Cloud Storage stitched together, with security rules written in a separate DSL.
+- **Postgres beats Firestore for this shape.** A user owning many documents, each having many chunks and citations, is fundamentally relational. Firestore forces denormalisation and makes "list all my documents with their chunk counts" awkward.
+- **Storage with signed URLs out of the box.** Uploaded PDFs become `supabase.storage.from('papers').upload(user_id/filename.pdf)` with RLS — no separate IAM config.
+- **pgvector ships in Supabase.** The same Postgres instance can hold embeddings, so the FAISS in-process index could move to `pgvector` with `user_id` filtering — solving multi-tenancy and persistence in one move.
+- **Generous free tier** (500MB DB, 1GB storage, 50k MAU) covers demo/portfolio scale without a credit card.
+
+**Why not Firestore (despite already being wired in):**
+- Existing conversation store is ~80 LOC; the migration cost is small.
+- Firestore document size limit (1MB) means chunk arrays for large papers need sub-collection gymnastics.
+- Adding Cloud Storage + Firebase Auth + Firestore Security Rules is three products and two configuration languages.
+
+**Why not custom Postgres / Django / etc:**
+- For a demo/portfolio, hand-rolling auth and storage is unjustified work. Supabase is "managed Postgres with the boilerplate done."
+
+### Schema sketch (Supabase / Postgres)
+
+```sql
+-- auth.users provided by Supabase Auth
+
+create table documents (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references auth.users not null,
+  filename    text not null,
+  doc_type    text not null,
+  storage_path text not null,       -- supabase storage key
+  chunks      int not null,
+  uploaded_at timestamptz default now()
+);
+
+create table chunks (
+  id          uuid primary key default gen_random_uuid(),
+  document_id uuid references documents on delete cascade,
+  content     text not null,
+  embedding   vector(384),          -- pgvector, MiniLM-L6-v2 dims
+  metadata    jsonb
+);
+
+create table conversations (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references auth.users not null,
+  title      text,
+  created_at timestamptz default now()
+);
+
+create table messages (
+  id              uuid primary key default gen_random_uuid(),
+  conversation_id uuid references conversations on delete cascade,
+  role            text not null check (role in ('user', 'assistant')),
+  content         text not null,
+  citations       jsonb,
+  created_at      timestamptz default now()
+);
+
+-- Row-Level Security: a user only sees their own rows
+alter table documents enable row level security;
+create policy "users see own documents" on documents
+  for all using (auth.uid() = user_id);
+-- repeat for chunks (via documents.user_id), conversations, messages
+```
+
+### Migration order
+
+1. Wire Supabase Auth into FastAPI (`Depends(get_current_user)` middleware).
+2. Move conversation_store to a Supabase-backed implementation; keep `ConversationStore` interface intact.
+3. Add `user_id` to uploaded-document metadata; move blob storage to Supabase Storage.
+4. Replace FAISS with `pgvector` queries filtered by `user_id` (this also removes the in-process index limitation flagged under Production Hardening).
+
+**Status:** deferred — v1 is a single-user demo with a curated corpus. The current `ConversationStore` already falls back gracefully between Firestore and in-memory, so the abstraction needed for this change exists.
+
+---
+
 ## Production Hardening
 
 - **Authentication:** API key / session-token middleware on FastAPI `/ask`.
@@ -131,4 +214,3 @@ return [candidates[r.index] for r in reranked.results]
 - **General SWE corpus expansion:** add chapters from *Designing Data-Intensive Applications*, the Google SRE Book, key distributed systems papers — broadens the "research assistant" framing beyond AI/ML.
 - **Document versioning:** track `ingested_at` per source and surface it in citations so users can spot stale content.
 - **Selective re-ingestion:** today BM25 is rebuilt from scratch on every ingest call. Fine at 6 docs, painful at 600.
-- **Multi-tenant corpora:** today there's one global index — adding `user_id` / `workspace_id` scoping is the smallest practical path to multi-user support.

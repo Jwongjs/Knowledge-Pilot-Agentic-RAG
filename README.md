@@ -26,9 +26,9 @@ This decomposes into two sub-queries, retrieves from two separate papers (LoRA a
 
 ![Citations tab](docs/demo_citations.png)
 
-### Evaluation tab
+### Documents tab
 
-![Evaluation tab](docs/demo_eval.png)
+![Documents tab](docs/demo_documents.png)
 
 ---
 
@@ -140,6 +140,17 @@ python -m pytest tests/test_graph_e2e.py tests/test_citations.py tests/test_eval
 ```
 
 41 tests covering all 4 routing paths, citation marker extraction, hallucination guard logic, and evaluation harness utilities.
+
+## Run the evaluation
+
+The 25-case golden dataset is run offline against LangSmith:
+
+```bash
+# From backend/
+python evaluation/run_eval.py
+```
+
+Reports faithfulness, citation accuracy, tool selection, and re-retrieval rate.
 
 ---
 
