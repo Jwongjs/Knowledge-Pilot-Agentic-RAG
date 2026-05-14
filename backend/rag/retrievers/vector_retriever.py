@@ -40,6 +40,17 @@ class VectorRetriever:
         )
         self._reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
+    def refresh(self, faiss_store: FAISS, bm25_retriever: BM25Retriever) -> None:
+        """Rebind underlying stores after a new document is ingested at runtime."""
+        self._faiss = faiss_store
+        self._ensemble = EnsembleRetriever(
+            retrievers=[
+                faiss_store.as_retriever(search_kwargs={"k": _DENSE_TOP_K}),
+                bm25_retriever,
+            ],
+            weights=[_DENSE_WEIGHT, _SPARSE_WEIGHT],
+        )
+
     async def retrieve(self, query: str, **kwargs) -> list[Evidence]:
         import asyncio
 

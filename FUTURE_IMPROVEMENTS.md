@@ -55,6 +55,22 @@ return [candidates[r.index] for r in reranked.results]
 
 ---
 
+### Dedicated paper-discovery tool (arxiv / Semantic Scholar / OpenAlex)
+**Where it fits:** a third tool alongside `vector_retriever` and `web_search`, called when the user wants to *find* relevant papers (not just answer a question from a known one).
+
+**Why considered:**
+- Returns structured paper metadata (authors, abstract, citation counts, PDF URLs) rather than web snippets.
+- Stronger signal than Tavily for "what's the best paper on X" style queries.
+
+**Why deferred:**
+- v1 already supports the same workflow via *web_search → user uploads the PDF → vector_retriever queries it*. The user-driven curation step is a feature, not a friction point — it keeps the corpus relevant rather than auto-bloating it.
+- A third tool means a third planner branch, a third evidence type, and ranking logic to merge structured paper hits with web results.
+- The 25-case eval set doesn't include "find me papers" queries, so improvement would be unmeasured.
+
+**When to revisit:** if a user need emerges for autonomous literature surveys (e.g. "give me the top 10 papers on retrieval-augmented generation since 2024").
+
+---
+
 ### Contextual Retrieval (Anthropic technique)
 **Where it fits:** during ingestion in [backend/ingest/pdf_loader.py](backend/ingest/pdf_loader.py) — prepend each chunk with a 50-100 token LLM-generated summary of its position in the document before embedding.
 

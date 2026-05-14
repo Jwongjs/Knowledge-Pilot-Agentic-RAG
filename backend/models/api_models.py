@@ -26,3 +26,9 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     chunks_indexed: int
     source_path: str
+
+
+class UploadResponse(BaseModel):
+    filename: str
+    chunks_indexed: int
+    total_documents: int

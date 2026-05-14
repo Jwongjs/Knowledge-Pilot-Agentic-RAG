@@ -1,3 +1,7 @@
+TO-DO
+- New feature allow upload research paper at streamlit for user
+- Question if finding relevant research paper for the user is needed (whether web search is sufficient to find research paper)
+
 **PRODUCT REQUIREMENTS DOCUMENT**
 
 **Agentic RAG Knowledge Assistant**

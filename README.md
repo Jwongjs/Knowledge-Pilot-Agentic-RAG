@@ -8,12 +8,27 @@ The AI/ML research corpus is illustrative — swap the PDFs and the graph is unc
 
 ## Demo
 
-<!-- Add a screen recording or screenshot here -->
-> **App demo coming soon**
->
-> ![Demo placeholder](https://placehold.co/800x450?text=App+Demo)
->
-> *Replace the image above with a GIF or screenshot of the running Streamlit app.*
+Walkthrough of a single multi-hop query exercising every tab in the Streamlit app:
+
+> **Example query:** *"Compare how LoRA reduces trainable parameters with how vLLM reduces memory usage."*
+
+This decomposes into two sub-queries, retrieves from two separate papers (LoRA and vLLM), and produces an answer with distinct citations per claim.
+
+### Chat tab
+
+![Chat tab](docs/demo_chat.png)
+
+### Chunks tab
+
+![Chunks tab](docs/demo_chunks.png)
+
+### Citations tab
+
+![Citations tab](docs/demo_citations.png)
+
+### Evaluation tab
+
+![Evaluation tab](docs/demo_eval.png)
 
 ---
 
@@ -127,6 +142,10 @@ python -m pytest tests/test_graph_e2e.py tests/test_citations.py tests/test_eval
 41 tests covering all 4 routing paths, citation marker extraction, hallucination guard logic, and evaluation harness utilities.
 
 ---
+
+## Bring your own corpus
+
+Upload PDFs directly from the Streamlit sidebar — they get parsed, chunked, indexed into FAISS + BM25, and become searchable immediately. The planner's corpus manifest refreshes after each upload, so tool selection adapts on the next query.
 
 ## Corpus
 

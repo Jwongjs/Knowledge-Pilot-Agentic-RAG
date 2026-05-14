@@ -1,8 +1,8 @@
 from dotenv import load_dotenv
 load_dotenv()  # must run before any LangChain/OpenAI imports resolve env vars
 
-from fastapi import FastAPI, HTTPException
-from models.api_models import AskRequest, AskResponse, IngestRequest, IngestResponse
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from models.api_models import AskRequest, AskResponse, IngestRequest, IngestResponse, UploadResponse
 from rag.knowledge_pilot_service import KnowledgePilotService
 
 app = FastAPI(title="KnowledgePilot API")
@@ -30,6 +30,17 @@ async def ask(request: AskRequest):
 async def ingest(request: IngestRequest):
     try:
         return await _service.ingest(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/upload", response_model=UploadResponse)
+async def upload(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        return await _service.upload(filename=file.filename, file_bytes=contents)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

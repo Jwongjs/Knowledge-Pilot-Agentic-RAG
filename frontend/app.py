@@ -90,6 +90,35 @@ def _render_sidebar(last_response: dict | None):
                 st.markdown(f"[🔗 LangSmith trace]({trace_url})")
 
         st.divider()
+        st.markdown("**Upload a paper**")
+        uploaded = st.file_uploader(
+            "PDF or DOCX",
+            type=["pdf", "docx"],
+            label_visibility="collapsed",
+            key=st.session_state.get("uploader_key", "uploader_0"),
+        )
+        if uploaded is not None and uploaded.name not in st.session_state.get("uploaded_names", set()):
+            with st.spinner(f"Indexing {uploaded.name}…"):
+                try:
+                    files = {"file": (uploaded.name, uploaded.getvalue(), uploaded.type)}
+                    with httpx.Client(timeout=_TIMEOUT) as client:
+                        r = client.post(f"{_API}/upload", files=files)
+                    r.raise_for_status()
+                    info = r.json()
+                    st.session_state.setdefault("uploaded_names", set()).add(uploaded.name)
+                    st.success(
+                        f"✅ {info['filename']} — {info['chunks_indexed']} chunks indexed "
+                        f"({info['total_documents']} total documents)"
+                    )
+                except httpx.ConnectError:
+                    st.error("Cannot reach backend at localhost:8000.")
+                except httpx.HTTPStatusError as exc:
+                    detail = exc.response.json().get("detail", str(exc))
+                    st.error(f"Upload failed: {detail}")
+                except Exception as exc:
+                    st.error(f"Upload error: {exc}")
+
+        st.divider()
         st.markdown("**Example queries**")
         for label, q in _EXAMPLE_QUERIES:
             if st.button(f"{label}: {q[:45]}…" if len(q) > 45 else f"{label}: {q}", key=q):

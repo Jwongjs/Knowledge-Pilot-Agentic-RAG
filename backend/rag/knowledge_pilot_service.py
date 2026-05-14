@@ -11,7 +11,8 @@ from rag.retrievers.vector_retriever import VectorRetriever
 from rag.retrievers.web_search import WebSearch
 from ingest.index_builder import IndexBuilder
 from rag.conversation_store import ConversationStore
-from models.api_models import AskRequest, AskResponse, IngestRequest, IngestResponse
+from pathlib import Path
+from models.api_models import AskRequest, AskResponse, IngestRequest, IngestResponse, UploadResponse
 from models.agent_state import AgentState
 
 
@@ -25,16 +26,17 @@ class KnowledgePilotService:
         index_builder = IndexBuilder()
         faiss_store, bm25_retriever = index_builder.load_indices()
 
-        vector_retriever = VectorRetriever(faiss_store, bm25_retriever)
+        self._vector_retriever = VectorRetriever(faiss_store, bm25_retriever)
         web_search = WebSearch(api_key=os.environ["TAVILY_API_KEY"])
 
-        action_executor = ActionExecutor(vector_retriever, web_search)
+        action_executor = ActionExecutor(self._vector_retriever, web_search)
         corpus_titles = [_strip_ext(s["name"]) for s in index_builder.list_sources()]
 
+        self._planner = Planner(llm, corpus_titles=corpus_titles)
         self._graph = KnowledgePilotGraphOrchestrator(
             query_analyzer=QueryAnalyzer(llm),
             query_decomposer=QueryDecomposer(llm),
-            planner=Planner(llm, corpus_titles=corpus_titles),
+            planner=self._planner,
             action_executor=action_executor,
             answer_synthesizer=AnswerSynthesizer(llm),
         )
@@ -78,6 +80,29 @@ class KnowledgePilotService:
     async def ingest(self, request: IngestRequest) -> IngestResponse:
         count = await self._index_builder.ingest(request.source_path, request.doc_type)
         return IngestResponse(chunks_indexed=count, source_path=request.source_path)
+
+    async def upload(self, filename: str, file_bytes: bytes, doc_type: str = "research_paper") -> UploadResponse:
+        suffix = Path(filename).suffix.lower()
+        if suffix not in (".pdf", ".docx"):
+            raise ValueError(f"Unsupported file type: {suffix}. Supported: .pdf, .docx")
+
+        target_dir = Path(__file__).parent.parent.parent / "data" / "papers"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / filename
+        target_path.write_bytes(file_bytes)
+
+        count = await self._index_builder.ingest(str(target_path), doc_type)
+
+        sources = self._index_builder.list_sources()
+        self._planner._corpus_titles = [_strip_ext(s["name"]) for s in sources]
+        faiss_store, bm25_retriever = self._index_builder.load_indices()
+        self._vector_retriever.refresh(faiss_store, bm25_retriever)
+
+        return UploadResponse(
+            filename=filename,
+            chunks_indexed=count,
+            total_documents=len(sources),
+        )
 
     async def list_documents(self) -> list[dict]:
         return self._index_builder.list_sources()
