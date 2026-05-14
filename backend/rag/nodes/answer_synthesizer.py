@@ -36,6 +36,9 @@ class AnswerSynthesizer:
         }
 
 
+_SNIPPET_LIMIT = 240
+
+
 def _build_citations(evidence_list: list[Evidence], state: AgentState) -> list[Citation]:
     citations = []
     for i, e in enumerate(evidence_list):
@@ -47,7 +50,7 @@ def _build_citations(evidence_list: list[Evidence], state: AgentState) -> list[C
             url=e.url,
             page_number=e.page,
             section_title=e.metadata.get("section_title"),
-            snippet=e.content[:120],
+            snippet=_truncate(e.content, _SNIPPET_LIMIT),
             dense_score=e.dense_score,
             rerank_score=e.rerank_score,
             published_date=e.metadata.get("published_date"),
@@ -56,6 +59,16 @@ def _build_citations(evidence_list: list[Evidence], state: AgentState) -> list[C
             iteration=e.metadata.get("iteration", 1),
         ))
     return citations
+
+
+def _truncate(text: str, limit: int) -> str:
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    cut = text.rfind(" ", 0, limit)
+    if cut == -1:
+        cut = limit
+    return text[:cut].rstrip(",;:.- ") + "…"
 
 
 _SYSTEM_PROMPT = (
