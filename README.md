@@ -16,19 +16,19 @@ This decomposes into two sub-queries, retrieves from two separate papers (LoRA a
 
 ### Chat tab
 
-![Chat tab](docs/demo_chat.png)
+<img width="1512" height="723" alt="image" src="https://github.com/user-attachments/assets/8a3a1354-7e69-4300-9c38-0a930e2c5425" />
 
 ### Chunks tab
 
-![Chunks tab](docs/demo_chunks.png)
+<img width="1514" height="724" alt="image" src="https://github.com/user-attachments/assets/b601979c-f5f0-4718-9bb0-d0af82ed09f5" />
 
 ### Citations tab
 
-![Citations tab](docs/demo_citations.png)
+<img width="1521" height="723" alt="image" src="https://github.com/user-attachments/assets/3eb11a74-acb9-4f47-a1ce-0eb83059f8bd" />
 
 ### Documents tab
 
-![Documents tab](docs/demo_documents.png)
+<img width="1524" height="723" alt="image" src="https://github.com/user-attachments/assets/64f827cc-e4f7-4fda-9f99-23abaefa1f66" />
 
 ---
 
